@@ -273,7 +273,7 @@ def adb_send_keycode(keycode: int, host: str = None, port: int = None) -> bool:
     target_port = port or adb_settings.get("port", 5555)
 
     if not target_host:
-        verbose_log("ADB host not configured")
+        verbose_log("ADB host not configured. Please run adb_setup first.")
         return False
 
     success, output = adb_command(
@@ -341,13 +341,15 @@ def adb_hdmi_switch(input_number: int) -> bool:
     target_port = adb_settings.get("port", 5555)
 
     if not target_host:
-        verbose_log("ADB host not configured")
+        verbose_log("ADB host not configured for HDMI switching. Please run adb_setup first.")
         return False
 
     print(f"Switching to HDMI {input_number} via ADB...")
 
     # Try using Android TV's input command
-    # This may vary by device; using a common approach
+    # NOTE: This component name may vary by device/manufacturer.
+    # For Philips TVs, the activity path might differ from standard Android TV.
+    # Users may need to determine the correct path using: adb shell dumpsys activity activities
     hdmi_input = f"com.google.android.videos/.TvInputActivity#HDMI{input_number}"
 
     success, output = adb_command(
