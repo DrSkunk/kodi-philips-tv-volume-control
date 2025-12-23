@@ -38,7 +38,10 @@ SECRET_KEY_B64 = (
     "ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA=="
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Allow overriding the storage location (useful when run as a Kodi add-on).
+BASE_DIR = os.environ.get(
+    "PHILIPS_TV_BASE_DIR", os.path.dirname(os.path.abspath(__file__))
+)
 SETTINGS_FILE = os.path.join(BASE_DIR, "philips_tv_settings.json")
 AUTH_FILE = os.path.join(BASE_DIR, "philips_tv_auth.json")
 VERBOSE: bool = False
@@ -163,7 +166,7 @@ def http_json(
 
 # ---------- commands ----------
 
-def pair(ip: str, port: int = 1926) -> None:
+def pair(ip: str, port: int = 1926, pin_reader=read_pin) -> None:
     base = f"https://{ip}:{port}/6"
 
     device_id = random_id()
@@ -183,7 +186,7 @@ def pair(ip: str, port: int = 1926) -> None:
     )
 
     print("PIN should now be visible on TV")
-    pin = read_pin()
+    pin = pin_reader()
 
     grant_payload = {
         "auth": {
@@ -281,12 +284,24 @@ def switch_source(source_id: str, port_override: int = None) -> None:
     payload = {"id": source_id}
 
     print(f"Switching source to {source_id} on {ip}:{port}")
-    http_json(
-        f"{base}/sources/current",
-        payload=payload,
-        username=auth["username"],
-        password=auth["password"],
-    )
+    try:
+        http_json(
+            f"{base}/sources/current",
+            payload=payload,
+            username=auth["username"],
+            password=auth["password"],
+        )
+    except RuntimeError as exc:
+        # Some models return 404 for /sources/current; try activities/launch.
+        if "404" not in str(exc):
+            raise
+        verbose_log("Falling back to /activities/launch for source switch")
+        http_json(
+            f"{base}/activities/launch",
+            payload=payload,
+            username=auth["username"],
+            password=auth["password"],
+        )
     print(f"✓ Switched source to {source_id}")
 
 

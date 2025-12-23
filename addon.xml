@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="script.philips-tv-volume-control"
+       name="Philips TV Volume Control"
+       version="0.2.0"
+       provider-name="drskunk">
+
+  <requires>
+    <import addon="xbmc.python" version="3.0.0" />
+  </requires>
+
+  <extension point="xbmc.python.script" library="default.py">
+    <provides>executable</provides>
+  </extension>
+
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Control Philips TV volume via JointSpace from Kodi</summary>
+    <description lang="en_GB">GUI helper for pairing and testing Philips JointSpace v6 remote keys. Also usable from keymaps via RunScript.</description>
+    <platform>all</platform>
+  </extension>
+
+</addon>

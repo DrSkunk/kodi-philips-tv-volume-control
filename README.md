@@ -5,7 +5,6 @@ Small stdlib-only Python helper that proxies Kodi’s volume keys directly to a 
 ## Files
 - `philips_tv.py` – main script (pairing and volume/key commands).
 - `philips_tv_settings.json` / `philips_tv_auth.json` – saved host/port and digest auth, written alongside the script after pairing; optional `verbose` flag for extra logging (default `false`).
-- `kodi-key.sh` – generic wrapper for Kodi keymaps/buttons.
 
 ## Install on LibreELEC/OpenELEC via SSH
 1) Copy the repo to the box (e.g. `/storage/kodi-philips-tv-volume-control`):
@@ -22,21 +21,39 @@ python3 philips_tv.py pair <TV_IP> [port=1926]
 ```
 Enter the PIN shown on the TV. This writes `philips_tv_settings.json` and `philips_tv_auth.json` in the same folder.
 
+## Kodi GUI add-on
+Install the folder as a script add-on (local install from zip or source). Launch “Philips TV Volume Control” from Programs to:
+
+- Pair with your TV (enter IP/port and PIN from the TV).
+- Test buttons (Volume Up/Down, Mute, Power/Standby, Back).
+
+Settings and auth are stored under the add-on data directory so pairing only has to be done once.
+
 ## Kodi keymap to send media keys
-Map keyboard/media keys to the wrapper scripts so Kodi sends volume to the TV instead of local audio. Create or edit `/storage/.kodi/userdata/keymaps/keyboard.xml` (or a custom keymap) with entries like:
+Use the add-on entrypoint directly from keymaps so Kodi sends volume to the TV instead of local audio. Create or edit `/storage/.kodi/userdata/keymaps/keyboard.xml` (or a custom keymap) with entries like:
 
 ```xml
 <keymap>
   <global>
+
     <keyboard>
-      <volumeplus>RunScript(/storage/kodi-philips-tv-volume-control/kodi-key.sh VolumeUp)</volumeplus>
-      <volumeminus>RunScript(/storage/kodi-philips-tv-volume-control/kodi-key.sh VolumeDown)</volumeminus>
+      <volume_up>RunScript(script.philips-tv-volume-control,VolumeUp)</volume_up>
+      <volume_down>RunScript(script.philips-tv-volume-control,VolumeDown)</volume_down>
     </keyboard>
+
+    <remote>
+      <volume_up>RunScript(script.philips-tv-volume-control,VolumeUp)</volume_up>
+      <volume_down>RunScript(script.philips-tv-volume-control,VolumeDown)</volume_down>
+    </remote>
+
   </global>
 </keymap>
+
 ```
 
-Restart Kodi (or `systemctl restart kodi` if applicable) to apply the keymap. The wrapper runs the Python script directly on each keypress.
+Restart Kodi (or `systemctl restart kodi` if applicable) to apply the keymap.
+
+Any first argument passed to `RunScript(script.philips-tv-volume-control, ...)` is treated as a Philips key name (e.g. `Standby`, `Back`, `Mute`), so you can map additional buttons the same way.
 
 ## Manual usage (debug/CLI)
 Volume up/down (sends remote keypresses, optional repeat count):
@@ -55,11 +72,11 @@ Switch HDMI input (any number, default API expects `hdmiN`):
 ```bash
 python3 philips_tv.py hdmi <n>
 ```
+If your TV returns a 404 for the default endpoint, the script falls back to `activities/launch` automatically.
 
 Send any remote key (optional repeat count):
 ```bash
 python3 philips_tv.py key VolumeUp [count] [port]
-./kodi-key.sh VolumeDown 3         # example wrapper
 ```
 
 ## Verbose logging
