@@ -123,12 +123,11 @@ def check_adb_via_gui() -> None:
             notify(f"✓ {message}")
         else:
             dialog = xbmcgui.Dialog()
-            dialog.ok(
-                "ADB Not Available",
-                message,
-                "",
+            full_message = (
+                f"{message}\n\n"
                 "Install 'System Tools' addon from LibreELEC repository to get ADB support."
             )
+            dialog.ok("ADB Not Available", full_message)
     except Exception as exc:  # noqa: BLE001
         log(f"ADB check failed: {exc}")
         notify(f"ADB check failed: {exc}", error=True)

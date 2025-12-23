@@ -275,7 +275,11 @@ def check_adb_available() -> Tuple[bool, str]:
             check=False,
         )
         if result.returncode == 0:
-            version_line = result.stdout.strip().split('\n')[0] if result.stdout else "unknown"
+            version_line = "unknown"
+            if result.stdout and result.stdout.strip():
+                lines = result.stdout.strip().split('\n')
+                if lines:
+                    version_line = lines[0]
             return True, f"ADB available: {version_line}"
         else:
             return False, "ADB binary found but returned an error"
