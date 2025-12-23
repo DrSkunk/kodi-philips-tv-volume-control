@@ -67,10 +67,61 @@ def send_key_from_gui(key: str, count: int = 1) -> None:
         notify(f"Failed to send {key}: {exc}", error=True)
 
 
+def configure_adb_via_gui() -> None:
+    dialog = xbmcgui.Dialog()
+    ip = dialog.input("ADB TV IP address", defaultt="")
+    if not ip:
+        return
+
+    port_str = dialog.input("ADB Port", defaultt="5555", type=xbmcgui.INPUT_NUMERIC)
+    port = int(port_str) if port_str else 5555
+
+    proceed = dialog.yesno(
+        "Configure ADB",
+        f"Configure ADB for {ip}:{port}?\nMake sure ADB debugging is enabled on the TV.",
+    )
+    if not proceed:
+        return
+
+    try:
+        philips_tv.save_adb_settings(enabled=True, host=ip, port=port)
+        notify("ADB configured")
+    except Exception as exc:  # noqa: BLE001
+        log(f"ADB setup failed: {exc}")
+        notify(f"ADB setup failed: {exc}", error=True)
+
+
+def toggle_adb_mode_via_gui() -> None:
+    dialog = xbmcgui.Dialog()
+    adb_settings = philips_tv.get_adb_settings()
+
+    current_enabled = adb_settings.get("enabled", False)
+    current_use_for_all = adb_settings.get("use_for_all", False)
+
+    options = [
+        f"Enable ADB: {'Yes' if current_enabled else 'No'}",
+        f"Use ADB for all operations: {'Yes' if current_use_for_all else 'No'}",
+        "Back",
+    ]
+
+    choice = dialog.select("ADB Settings", options)
+
+    if choice == 0:
+        new_enabled = not current_enabled
+        philips_tv.save_adb_settings(enabled=new_enabled)
+        notify(f"ADB {'enabled' if new_enabled else 'disabled'}")
+    elif choice == 1:
+        new_use_for_all = not current_use_for_all
+        philips_tv.save_adb_settings(use_for_all=new_use_for_all)
+        notify(f"ADB use_for_all set to {new_use_for_all}")
+
+
 def show_menu() -> None:
     dialog = xbmcgui.Dialog()
     options = [
         "Pair TV",
+        "Configure ADB",
+        "ADB Settings",
         "Test Volume Up",
         "Test Volume Down",
         "Test Mute",
@@ -86,14 +137,18 @@ def show_menu() -> None:
         if choice == 0:
             pair_via_gui()
         elif choice == 1:
-            send_key_from_gui("VolumeUp")
+            configure_adb_via_gui()
         elif choice == 2:
-            send_key_from_gui("VolumeDown")
+            toggle_adb_mode_via_gui()
         elif choice == 3:
-            send_key_from_gui("Mute")
+            send_key_from_gui("VolumeUp")
         elif choice == 4:
-            send_key_from_gui("Standby")
+            send_key_from_gui("VolumeDown")
         elif choice == 5:
+            send_key_from_gui("Mute")
+        elif choice == 6:
+            send_key_from_gui("Standby")
+        elif choice == 7:
             send_key_from_gui("Back")
 
 

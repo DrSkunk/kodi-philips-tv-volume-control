@@ -29,6 +29,38 @@ Install the folder as a script add-on (local install from zip or source). Launch
 
 Settings and auth are stored under the add-on data directory so pairing only has to be done once.
 
+## ADB Setup (Optional but Recommended)
+
+**NEW:** ADB (Android Debug Bridge) allows controlling the TV even when it's in standby mode, which the JointSpace API cannot do.
+
+### Prerequisites
+1. Install `adb` on your Kodi device (most LibreELEC/OpenELEC systems have it available)
+2. Enable ADB debugging on your Philips Android TV:
+   - Go to Settings → About → Build and tap 7 times to enable Developer Options
+   - Go to Settings → Developer Options → USB Debugging (enable)
+   - Go to Settings → Developer Options → Network Debugging (enable)
+
+### Configure ADB
+```bash
+# Set up ADB connection (usually same IP as JointSpace, port 5555)
+python3 philips_tv.py adb_setup <TV_IP> [adb_port=5555]
+
+# Enable ADB support
+python3 philips_tv.py adb_enable true
+
+# (Optional) Use ADB for all operations instead of JointSpace
+python3 philips_tv.py adb_use_for_all true
+```
+
+When `adb_enabled` is `true` but `adb_use_for_all` is `false` (default), the script will try JointSpace first and fall back to ADB if the TV is off. Set `adb_use_for_all` to `true` to use ADB exclusively for faster response times.
+
+### Via GUI Add-on
+You can also configure ADB through the GUI:
+- Launch "Philips TV Volume Control" from Programs
+- Select "Configure ADB" to set the TV IP and port
+- Select "ADB Settings" to enable ADB or toggle "use for all operations"
+
+
 ## Kodi keymap to send media keys
 Use the add-on entrypoint directly from keymaps so Kodi sends volume to the TV instead of local audio. Create or edit `/storage/.kodi/userdata/keymaps/keyboard.xml` (or a custom keymap) with entries like:
 
