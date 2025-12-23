@@ -116,11 +116,30 @@ def toggle_adb_mode_via_gui() -> None:
         notify(f"ADB use_for_all set to {new_use_for_all}")
 
 
+def check_adb_via_gui() -> None:
+    try:
+        available, message = philips_tv.check_adb_available()
+        if available:
+            notify(f"✓ {message}")
+        else:
+            dialog = xbmcgui.Dialog()
+            dialog.ok(
+                "ADB Not Available",
+                message,
+                "",
+                "Install 'System Tools' addon from LibreELEC repository to get ADB support."
+            )
+    except Exception as exc:  # noqa: BLE001
+        log(f"ADB check failed: {exc}")
+        notify(f"ADB check failed: {exc}", error=True)
+
+
 def show_menu() -> None:
     dialog = xbmcgui.Dialog()
     options = [
         "Pair TV",
         "Configure ADB",
+        "Check ADB Availability",
         "ADB Settings",
         "Test Volume Up",
         "Test Volume Down",
@@ -139,16 +158,18 @@ def show_menu() -> None:
         elif choice == 1:
             configure_adb_via_gui()
         elif choice == 2:
-            toggle_adb_mode_via_gui()
+            check_adb_via_gui()
         elif choice == 3:
-            send_key_from_gui("VolumeUp")
+            toggle_adb_mode_via_gui()
         elif choice == 4:
-            send_key_from_gui("VolumeDown")
+            send_key_from_gui("VolumeUp")
         elif choice == 5:
-            send_key_from_gui("Mute")
+            send_key_from_gui("VolumeDown")
         elif choice == 6:
-            send_key_from_gui("Standby")
+            send_key_from_gui("Mute")
         elif choice == 7:
+            send_key_from_gui("Standby")
+        elif choice == 8:
             send_key_from_gui("Back")
 
 

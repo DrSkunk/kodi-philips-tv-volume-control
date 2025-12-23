@@ -61,6 +61,7 @@ def usage() -> None:
         "  python philips_tv.py hdmi        <n> [port=1926]\n"
         "  python philips_tv.py key         <KeyName> [count=1] [port=1926]\n"
         "\nADB commands:\n"
+        "  python philips_tv.py adb_check   # Check if ADB is available\n"
         "  python philips_tv.py adb_setup   <TV_IP> [adb_port=5555]\n"
         "  python philips_tv.py adb_enable  [true|false]\n"
         "  python philips_tv.py adb_use_for_all [true|false]\n"
@@ -257,10 +258,33 @@ def adb_command(host: str, port: int, cmd: List[str], timeout: int = 10) -> Tupl
         return False, "ADB command timed out"
     except FileNotFoundError:
         verbose_log("  ✗ ADB not found")
-        return False, "ADB binary not found. Please install Android Debug Bridge (adb)."
+        return False, "ADB binary not found. On LibreELEC, install the 'System Tools' addon from the repository, or install adb manually. See README for details."
     except Exception as exc:
         verbose_log(f"  ✗ ADB error: {exc}")
         return False, str(exc)
+
+
+def check_adb_available() -> Tuple[bool, str]:
+    """Check if adb binary is available on the system. Returns (available, message)."""
+    try:
+        result = subprocess.run(
+            ["adb", "version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            version_line = result.stdout.strip().split('\n')[0] if result.stdout else "unknown"
+            return True, f"ADB available: {version_line}"
+        else:
+            return False, "ADB binary found but returned an error"
+    except FileNotFoundError:
+        return False, "ADB binary not found in PATH. On LibreELEC, install 'System Tools' addon."
+    except subprocess.TimeoutExpired:
+        return False, "ADB check timed out"
+    except Exception as exc:
+        return False, f"ADB check failed: {exc}"
 
 
 def adb_send_keycode(keycode: int, host: str = None, port: int = None) -> bool:
@@ -677,6 +701,15 @@ def handle_command(args: List[str]) -> None:
         count = int(rest[1]) if len(rest) >= 2 else 1
         port = int(rest[2]) if len(rest) >= 3 else None
         send_key_times(key_name, count, port)
+    elif cmd == "adb_check":
+        available, message = check_adb_available()
+        print(message)
+        if not available:
+            print("\nTo install ADB on LibreELEC:")
+            print("  1. Open Kodi → Add-ons → Install from repository")
+            print("  2. Go to LibreELEC Add-ons → Program add-ons")
+            print("  3. Install 'System Tools' or similar addon that includes adb")
+            sys.exit(1)
     elif cmd == "adb_setup":
         if len(rest) < 1:
             usage()

@@ -34,14 +34,32 @@ Settings and auth are stored under the add-on data directory so pairing only has
 **NEW:** ADB (Android Debug Bridge) allows controlling the TV even when it's in standby mode, which the JointSpace API cannot do.
 
 ### Prerequisites
-1. Install `adb` on your Kodi device (most LibreELEC/OpenELEC systems have it available)
-2. Enable ADB debugging on your Philips Android TV:
+
+#### 1. Install ADB on LibreELEC/OpenELEC
+ADB is **not** included by default in LibreELEC. You need to install it first:
+
+**On LibreELEC:**
+- Open Kodi → Add-ons → Install from repository → LibreELEC Add-ons → Program add-ons
+- Look for "System Tools" or similar addon that bundles command-line utilities
+- Install the addon - this will provide the `adb` binary
+- The binary will be available in the addon's path (typically accessible via `/storage/.kodi/addons/virtual.system-tools/bin/adb`)
+
+**Alternative methods:**
+- Use `adb` from another computer on your network to control the TV remotely
+- Manually download a standalone `adb` binary for your architecture (ARM/x86) and place it in `/storage/.kodi/addons/script.philips-tv-volume-control/` or `/storage/` (ensure it's executable with `chmod +x adb`)
+
+**Note:** If `adb` is not in your system PATH, the addon will not be able to use ADB features. Test by running `adb version` via SSH.
+
+#### 2. Enable ADB debugging on your Philips Android TV:
    - Go to Settings → About → Build and tap 7 times to enable Developer Options
    - Go to Settings → Developer Options → USB Debugging (enable)
    - Go to Settings → Developer Options → Network Debugging (enable)
 
 ### Configure ADB
 ```bash
+# First, check if ADB is available
+python3 philips_tv.py adb_check
+
 # Set up ADB connection (usually same IP as JointSpace, port 5555)
 python3 philips_tv.py adb_setup <TV_IP> [adb_port=5555]
 
@@ -57,6 +75,7 @@ When `adb_enabled` is `true` but `adb_use_for_all` is `false` (default), the scr
 ### Via GUI Add-on
 You can also configure ADB through the GUI:
 - Launch "Philips TV Volume Control" from Programs
+- Select "Check ADB Availability" to verify ADB is installed
 - Select "Configure ADB" to set the TV IP and port
 - Select "ADB Settings" to enable ADB or toggle "use for all operations"
 
