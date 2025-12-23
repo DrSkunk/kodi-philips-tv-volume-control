@@ -6,8 +6,11 @@ Usage:
   python philips_tv.py serve                           # start queue worker
   python philips_tv.py pair        <TV_IP> [port=1926]
   python philips_tv.py volume      <volume> [port=1926]
-  python philips_tv.py volume_up   [port=1926]
-  python philips_tv.py volume_down [port=1926]
+  python philips_tv.py get_volume  [port=1926]
+  python philips_tv.py volume_up   [steps=1] [port=1926]
+  python philips_tv.py volume_down [steps=1] [port=1926]
+  python philips_tv.py hdmi        <n> [port=1926]
+  python philips_tv.py key         <KeyName> [count=1] [port=1926]
 
 Designed to run on OpenELEC/Linux with only the Python standard library.
 """
@@ -23,10 +26,11 @@ import shlex
 import ssl
 import stat
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Self-signed cert on TV
 SSL_CONTEXT = ssl.create_default_context()
@@ -42,6 +46,7 @@ QUEUE_FIFO = "/tmp/philips_tv_commands.fifo"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(BASE_DIR, "philips_tv_settings.json")
 AUTH_FILE = os.path.join(BASE_DIR, "philips_tv_auth.json")
+VERBOSE: bool = False
 
 
 # ---------- helpers ----------
@@ -52,8 +57,11 @@ def usage() -> None:
         "  python philips_tv.py serve                           # start queue worker\n"
         "  python philips_tv.py pair        <TV_IP> [port=1926]\n"
         "  python philips_tv.py volume      <volume> [port=1926]\n"
-        "  python philips_tv.py volume_up   [port=1926]\n"
-        "  python philips_tv.py volume_down [port=1926]\n"
+        "  python philips_tv.py get_volume  [port=1926]\n"
+        "  python philips_tv.py volume_up   [steps=1] [port=1926]\n"
+        "  python philips_tv.py volume_down [steps=1] [port=1926]\n"
+        "  python philips_tv.py hdmi        <n> [port=1926]\n"
+        "  python philips_tv.py key         <KeyName> [count=1] [port=1926]\n"
     )
     sys.exit(1)
 
@@ -62,17 +70,41 @@ def auth_file() -> str:
     return AUTH_FILE
 
 
-def load_settings() -> Tuple[str, int]:
+def set_verbose(enabled: bool) -> None:
+    global VERBOSE
+    VERBOSE = bool(enabled)
+
+
+def verbose_log(message: str) -> None:
+    if VERBOSE:
+        print(message)
+
+
+def load_settings() -> Tuple[str, int, bool]:
     if not os.path.exists(SETTINGS_FILE):
         raise RuntimeError("Settings not found. Pair first.")
     with open(SETTINGS_FILE, encoding="utf-8") as f:
         data = json.load(f)
-    return data["ip"], int(data.get("port", 1926))
+    verbose = bool(data.get("verbose", False))
+    set_verbose(verbose)
+    return data["ip"], int(data.get("port", 1926)), verbose
 
 
-def save_settings(ip: str, port: int) -> None:
+def save_settings(ip: str, port: int, verbose: Optional[bool] = None) -> None:
+    current_verbose = False
+    if verbose is None and os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, encoding="utf-8") as f:
+                existing = json.load(f)
+                current_verbose = bool(existing.get("verbose", False))
+        except Exception:  # noqa: BLE001
+            current_verbose = False
+
+    final_verbose = current_verbose if verbose is None else bool(verbose)
+    set_verbose(final_verbose)
+
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump({"ip": ip, "port": port}, f, indent=2)
+        json.dump({"ip": ip, "port": port, "verbose": final_verbose}, f, indent=2)
 
 
 def random_id(length: int = 16) -> str:
@@ -140,7 +172,11 @@ def http_json(
     username: str = None,
     password: str = None,
     method: str = "POST",
+    retries: int = 2,
+    retry_delay: float = 0.5,
+    timeout: int = 20,
 ) -> dict:
+    verbose_log(f"→ HTTP {method} {url} (payload={bool(payload)})")
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     headers = {"Content-Type": "application/json"}
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -154,15 +190,23 @@ def http_json(
         urllib.request.HTTPSHandler(context=SSL_CONTEXT), auth_handler
     )
 
-    try:
-        with opener.open(req, timeout=10) as resp:
-            body = resp.read().decode("utf-8")
-            return json.loads(body) if body else {}
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"{e.code} {e.reason}: {body}") from None
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Request failed: {e.reason}") from None
+    attempts = retries + 1
+    for attempt in range(attempts):
+        try:
+            verbose_log(f"  attempt {attempt + 1}/{attempts}")
+            with opener.open(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8")
+                verbose_log("  ✓ HTTP ok")
+                return json.loads(body) if body else {}
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"{e.code} {e.reason}: {body}") from None
+        except urllib.error.URLError as e:
+            if attempt < attempts - 1:
+                verbose_log(f"  retrying after URLError: {e.reason}")
+                time.sleep(retry_delay)
+                continue
+            raise RuntimeError(f"Request failed: {e.reason}") from None
 
 
 # ---------- commands ----------
@@ -233,8 +277,9 @@ def load_auth() -> Dict[str, str]:
 
 def set_volume(volume: str, port_override: int = None) -> None:
     auth = load_auth()
-    ip, port_settings = load_settings()
+    ip, port_settings, _verbose = load_settings()
     port = port_override if port_override is not None else port_settings
+    print(f"Setting volume to {volume} on {ip}:{port}")
 
     base = f"https://{ip}:{port}/6"
     payload = {"current": int(volume), "muted": False}
@@ -245,14 +290,65 @@ def set_volume(volume: str, port_override: int = None) -> None:
         username=auth["username"],
         password=auth["password"],
     )
-
     print(f"✓ Volume set to {volume}")
+
+
+def send_key(key: str, port_override: int = None) -> None:
+    """Send a virtual remote keypress to the TV."""
+    auth = load_auth()
+    ip, port_settings, _verbose = load_settings()
+    port = port_override if port_override is not None else port_settings
+
+    base = f"https://{ip}:{port}/6"
+    payload = {"key": key}
+
+    print(f"Sending key {key} to {ip}:{port}")
+    http_json(
+        f"{base}/input/key",
+        payload=payload,
+        username=auth["username"],
+        password=auth["password"],
+    )
+
+
+def send_key_times(key: str, count: int, port_override: int = None) -> None:
+    presses = max(0, int(count))
+    if presses == 0:
+        print(f"Skipping key {key}: 0 presses requested")
+        return
+    for _ in range(presses):
+        send_key(key, port_override)
+
+
+def switch_source(source_id: str, port_override: int = None) -> None:
+    auth = load_auth()
+    ip, port_settings, _verbose = load_settings()
+    port = port_override if port_override is not None else port_settings
+
+    base = f"https://{ip}:{port}/6"
+    payload = {"id": source_id}
+
+    print(f"Switching source to {source_id} on {ip}:{port}")
+    http_json(
+        f"{base}/sources/current",
+        payload=payload,
+        username=auth["username"],
+        password=auth["password"],
+    )
+    print(f"✓ Switched source to {source_id}")
+
+
+def switch_to_hdmi(input_number: int = 1, port_override: int = None) -> None:
+    number = max(1, int(input_number))
+    source_id = f"hdmi{number}"
+    switch_source(source_id, port_override)
 
 
 def get_volume(port_override: int = None) -> dict:
     auth = load_auth()
-    ip, port_settings = load_settings()
+    ip, port_settings, _verbose = load_settings()
     port = port_override if port_override is not None else port_settings
+    print(f"Fetching volume from {ip}:{port}")
 
     base = f"https://{ip}:{port}/6"
     return http_json(
@@ -264,12 +360,12 @@ def get_volume(port_override: int = None) -> dict:
     )
 
 
-def adjust_volume(delta: int, port_override: int = None) -> None:
+def print_volume(port_override: int = None) -> None:
     info = get_volume(port_override)
-    current = int(info.get("current", 0))
-    max_vol = int(info.get("max", 60))
-    new_volume = max(0, min(max_vol, current + delta))
-    set_volume(str(new_volume), port_override)
+    current = info.get("current")
+    maximum = info.get("max")
+    muted = info.get("muted")
+    print(f"Volume: {current} / {maximum} (muted={muted})")
 
 
 # ---------- command dispatcher ----------
@@ -281,6 +377,7 @@ def handle_command(args: List[str], allow_queue: bool = True) -> None:
 
     cmd = args[0]
     rest = args[1:]
+    verbose_log(f"Handling command: {cmd} {rest}")
 
     if allow_queue and cmd != "serve" and maybe_enqueue(args):
         return
@@ -299,12 +396,30 @@ def handle_command(args: List[str], allow_queue: bool = True) -> None:
         volume_val = rest[0]
         port = int(rest[1]) if len(rest) >= 2 else None
         set_volume(volume_val, port)
-    elif cmd in ("volume_up", "volume-up", "volup", "up"):
+    elif cmd == "get_volume":
         port = int(rest[0]) if len(rest) >= 1 else None
-        adjust_volume(1, port)
-    elif cmd in ("volume_down", "volume-down", "voldown", "down"):
-        port = int(rest[0]) if len(rest) >= 1 else None
-        adjust_volume(-1, port)
+        print_volume(port)
+    elif cmd == "volume_up":
+        steps = int(rest[0]) if len(rest) >= 1 else 1
+        port = int(rest[1]) if len(rest) >= 2 else None
+        send_key_times("VolumeUp", steps, port)
+    elif cmd == "volume_down":
+        steps = int(rest[0]) if len(rest) >= 1 else 1
+        port = int(rest[1]) if len(rest) >= 2 else None
+        send_key_times("VolumeDown", steps, port)
+    elif cmd == "hdmi":
+        if len(rest) < 1:
+            usage()
+        hdmi_number = rest[0]
+        port = int(rest[1]) if len(rest) >= 2 else None
+        switch_to_hdmi(hdmi_number, port)
+    elif cmd == "key":
+        if len(rest) < 1:
+            usage()
+        key_name = rest[0]
+        count = int(rest[1]) if len(rest) >= 2 else 1
+        port = int(rest[2]) if len(rest) >= 3 else None
+        send_key_times(key_name, count, port)
     else:
         usage()
 
