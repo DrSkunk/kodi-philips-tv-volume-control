@@ -1,10 +1,9 @@
 # Philips TV Volume Bridge for Kodi
 
-Small stdlib-only Python helper that proxies Kodi’s volume keys to a Philips JointSpace v6 TV. A FIFO worker serializes volume changes so rapid keypresses do not overwhelm the TV.
+Small stdlib-only Python helper that proxies Kodi’s volume keys directly to a Philips JointSpace v6 TV.
 
 ## Files
-- `philips_tv.py` – main script (pairing, queue worker, volume commands).
-- `philips-tv.service` – systemd unit to run the queue worker.
+- `philips_tv.py` – main script (pairing and volume/key commands).
 - `philips_tv_settings.json` / `philips_tv_auth.json` – saved host/port and digest auth, written alongside the script after pairing; optional `verbose` flag for extra logging (default `false`).
 - `kodi-key.sh` – generic wrapper for Kodi keymaps/buttons.
 
@@ -23,15 +22,6 @@ python3 philips_tv.py pair <TV_IP> [port=1926]
 ```
 Enter the PIN shown on the TV. This writes `philips_tv_settings.json` and `philips_tv_auth.json` in the same folder.
 
-3) Install the systemd service:
-```bash
-mkdir -p /storage/.config/system.d
-cp /storage/kodi-philips-tv-volume-control/philips-tv.service /storage/.config/system.d/
-systemctl daemon-reload
-systemctl enable --now philips-tv.service
-```
-If your path differs, edit `WorkingDirectory` and `ExecStart` inside the unit. The worker listens on `/tmp/philips_tv_commands.fifo` and restarts on failure.
-
 ## Kodi keymap to send media keys
 Map keyboard/media keys to the wrapper scripts so Kodi sends volume to the TV instead of local audio. Create or edit `/storage/.kodi/userdata/keymaps/keyboard.xml` (or a custom keymap) with entries like:
 
@@ -46,14 +36,9 @@ Map keyboard/media keys to the wrapper scripts so Kodi sends volume to the TV in
 </keymap>
 ```
 
-Restart Kodi (or `systemctl restart kodi` if applicable) to apply the keymap. The scripts enqueue commands; the worker handles them sequentially.
+Restart Kodi (or `systemctl restart kodi` if applicable) to apply the keymap. The wrapper runs the Python script directly on each keypress.
 
 ## Manual usage (debug/CLI)
-Start worker manually:
-```bash
-python3 philips_tv.py serve
-```
-
 Volume up/down (sends remote keypresses, optional repeat count):
 ```bash
 python3 philips_tv.py volume_up [steps]

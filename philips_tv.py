@@ -3,7 +3,6 @@
 Philips JointSpace API v6 - Pairing + Volume
 
 Usage:
-  python philips_tv.py serve                           # start queue worker
   python philips_tv.py pair        <TV_IP> [port=1926]
   python philips_tv.py volume      <volume> [port=1926]
   python philips_tv.py get_volume  [port=1926]
@@ -16,15 +15,12 @@ Designed to run on OpenELEC/Linux with only the Python standard library.
 """
 
 import base64
-import errno
 import hashlib
 import hmac
 import json
 import os
 import random
-import shlex
 import ssl
-import stat
 import sys
 import time
 import urllib.error
@@ -42,7 +38,6 @@ SECRET_KEY_B64 = (
     "ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA=="
 )
 
-QUEUE_FIFO = "/tmp/philips_tv_commands.fifo"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(BASE_DIR, "philips_tv_settings.json")
 AUTH_FILE = os.path.join(BASE_DIR, "philips_tv_auth.json")
@@ -54,7 +49,6 @@ VERBOSE: bool = False
 def usage() -> None:
     print(
         "\nUsage:\n"
-        "  python philips_tv.py serve                           # start queue worker\n"
         "  python philips_tv.py pair        <TV_IP> [port=1926]\n"
         "  python philips_tv.py volume      <volume> [port=1926]\n"
         "  python philips_tv.py get_volume  [port=1926]\n"
@@ -122,48 +116,6 @@ def auth_signature(timestamp: str, pin: str) -> str:
     msg = f"{timestamp}{pin}".encode("utf-8")
     hmac_hex = hmac.new(key, msg, hashlib.sha1).hexdigest()
     return base64.b64encode(hmac_hex.encode("utf-8")).decode("ascii")
-
-
-def ensure_fifo() -> None:
-    if os.path.exists(QUEUE_FIFO):
-        mode = os.stat(QUEUE_FIFO).st_mode
-        if not stat.S_ISFIFO(mode):
-            raise RuntimeError(f"{QUEUE_FIFO} exists and is not a FIFO")
-    else:
-        os.mkfifo(QUEUE_FIFO, 0o600)
-
-
-def maybe_enqueue(args: List[str]) -> bool:
-    if not os.path.exists(QUEUE_FIFO):
-        return False
-    try:
-        fd = os.open(QUEUE_FIFO, os.O_WRONLY | os.O_NONBLOCK)
-    except OSError as exc:  # noqa: PERF203
-        if exc.errno == errno.ENXIO:
-            # FIFO exists but no reader; assume stale
-            os.unlink(QUEUE_FIFO)
-            return False
-        raise
-
-    with os.fdopen(fd, "w") as fifo:
-        fifo.write(" ".join(shlex.quote(a) for a in args) + "\n")
-    print("✓ Queued command for worker")
-    return True
-
-
-def serve() -> None:
-    ensure_fifo()
-    print(f"Queue worker listening on {QUEUE_FIFO} (Ctrl+C to exit)")
-    while True:
-        with open(QUEUE_FIFO, "r") as fifo:
-            for line in fifo:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    handle_command(shlex.split(line), allow_queue=False)
-                except Exception as exc:  # noqa: BLE001
-                    print(f"Worker error on '{line}': {exc}")
 
 
 def http_json(
@@ -371,7 +323,7 @@ def print_volume(port_override: int = None) -> None:
 # ---------- command dispatcher ----------
 
 
-def handle_command(args: List[str], allow_queue: bool = True) -> None:
+def handle_command(args: List[str]) -> None:
     if not args:
         usage()
 
@@ -379,12 +331,7 @@ def handle_command(args: List[str], allow_queue: bool = True) -> None:
     rest = args[1:]
     verbose_log(f"Handling command: {cmd} {rest}")
 
-    if allow_queue and cmd != "serve" and maybe_enqueue(args):
-        return
-
-    if cmd == "serve":
-        serve()
-    elif cmd == "pair":
+    if cmd == "pair":
         if len(rest) < 1:
             usage()
         ip = rest[0]
