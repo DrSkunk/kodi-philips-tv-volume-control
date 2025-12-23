@@ -335,6 +335,35 @@ def print_volume(port_override: int = None) -> None:
     print(f"Volume: {current} / {maximum} (muted={muted})")
 
 
+def get_current_source(port_override: int = None) -> Optional[str]:
+    """Return the current source id (e.g. hdmi1) if available."""
+    auth = load_auth()
+    ip, port_settings, _verbose = load_settings()
+    port = port_override if port_override is not None else port_settings
+    base = f"https://{ip}:{port}/6"
+    try:
+        info = http_json(
+            f"{base}/sources/current",
+            payload=None,
+            username=auth["username"],
+            password=auth["password"],
+            method="GET",
+        )
+        return str(info.get("id")) if isinstance(info, dict) else None
+    except Exception as exc:  # noqa: BLE001
+        verbose_log(f"Could not read current source: {exc}")
+        return None
+
+
+def toggle_hdmi1_or_standby(port_override: int = None) -> None:
+    """Switch to HDMI1 unless already there, then put TV in standby."""
+    current = (get_current_source(port_override) or "").lower()
+    if current == "hdmi1":
+        send_key("Standby", port_override)
+    else:
+        switch_to_hdmi(1, port_override)
+
+
 # ---------- command dispatcher ----------
 
 

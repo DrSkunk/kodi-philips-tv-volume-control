@@ -38,8 +38,17 @@ def pair_via_gui() -> None:
     port_str = dialog.input("Port", defaultt="1926", type=xbmcgui.INPUT_NUMERIC)
     port = int(port_str) if port_str else 1926
 
+    proceed = dialog.yesno(
+        "Confirm pairing",
+        f"Request pairing with {ip}:{port}?\nA PIN will appear on the TV next."
+        "\nNote: If this box is connected to the same TV, the PIN overlay may cover this input dialog.\n You can input the PIN blindly and press enter.",
+    )
+    if not proceed:
+        return
+
     def pin_reader(prompt: str = "Enter PIN shown on TV: ") -> str:
-        return dialog.input("TV PIN", type=xbmcgui.INPUT_NUMERIC)
+        # Explicit empty default to avoid reusing prior numeric inputs (e.g. 1926).
+        return dialog.input("TV PIN", defaultt="", type=xbmcgui.INPUT_NUMERIC)
 
     try:
         philips_tv.pair(ip, port, pin_reader=pin_reader)
@@ -102,11 +111,16 @@ def handle_args(args) -> None:
         "volume_down",
         "hdmi",
         "key",
+        "power_hdmi1",
     }
 
     try:
         if cmd in cli_commands:
-            philips_tv.handle_command(args)
+            if cmd == "power_hdmi1":
+                port = int(args[1]) if len(args) >= 2 else None
+                philips_tv.toggle_hdmi1_or_standby(port)
+            else:
+                philips_tv.handle_command(args)
             return
 
         # Fallback: treat the first argument as a key name for keymap use.
