@@ -39,7 +39,7 @@ Use the add-on entrypoint directly from keymaps so Kodi sends volume to the TV i
     <keyboard>
       <volume_up>RunScript(script.philips-tv-volume-control,VolumeUp)</volume_up>
       <volume_down>RunScript(script.philips-tv-volume-control,VolumeDown)</volume_down>
-      <space>PlayPause</space>
+      <key id="0xf200">PlayPause</key>
       <menu>Back</menu>
       <power>RunScript(script.philips-tv-volume-control,power_hdmi1)</power>
     </keyboard>
