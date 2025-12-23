@@ -454,36 +454,38 @@ def send_key(key: str, port_override: int = None) -> None:
     adb_settings = get_adb_settings()
     use_adb = adb_settings.get("use_for_all", False)
 
+    # Map key names to ADB keycodes
+    keycode_map = {
+        "VolumeUp": ADB_KEYCODE_VOLUME_UP,
+        "VolumeDown": ADB_KEYCODE_VOLUME_DOWN,
+        "Mute": ADB_KEYCODE_VOLUME_MUTE,
+        "Standby": ADB_KEYCODE_POWER,
+        "Power": ADB_KEYCODE_POWER,
+        "Back": ADB_KEYCODE_BACK,
+        "Home": ADB_KEYCODE_HOME,
+        "Menu": ADB_KEYCODE_MENU,
+    }
+
     # Try ADB first if configured for all operations
     if use_adb and adb_settings.get("enabled"):
-        # Map key names to ADB keycodes
-        keycode_map = {
-            "VolumeUp": ADB_KEYCODE_VOLUME_UP,
-            "VolumeDown": ADB_KEYCODE_VOLUME_DOWN,
-            "Mute": ADB_KEYCODE_VOLUME_MUTE,
-            "Standby": ADB_KEYCODE_POWER,
-            "Power": ADB_KEYCODE_POWER,
-            "Back": ADB_KEYCODE_BACK,
-            "Home": ADB_KEYCODE_HOME,
-            "Menu": ADB_KEYCODE_MENU,
-        }
-
         if key in keycode_map:
             print(f"Sending key {key} via ADB")
             if adb_send_keycode(keycode_map[key]):
                 return
             verbose_log("ADB failed, falling back to JointSpace")
+        else:
+            verbose_log(f"Key {key} not supported by ADB, using JointSpace")
 
     # Use JointSpace API
-    auth = load_auth()
-    ip, port_settings, _verbose = load_settings()
-    port = port_override if port_override is not None else port_settings
-
-    base = f"https://{ip}:{port}/6"
-    payload = {"key": key}
-
-    print(f"Sending key {key} to {ip}:{port}")
     try:
+        auth = load_auth()
+        ip, port_settings, _verbose = load_settings()
+        port = port_override if port_override is not None else port_settings
+
+        base = f"https://{ip}:{port}/6"
+        payload = {"key": key}
+
+        print(f"Sending key {key} to {ip}:{port}")
         http_json(
             f"{base}/input/key",
             payload=payload,
@@ -492,19 +494,9 @@ def send_key(key: str, port_override: int = None) -> None:
         )
     except RuntimeError as exc:
         # If JointSpace fails and ADB is enabled, try ADB as fallback
-        if adb_settings.get("enabled") and not use_adb:
+        if adb_settings.get("enabled") and not use_adb and key in keycode_map:
             verbose_log(f"JointSpace failed ({exc}), trying ADB fallback")
-            keycode_map = {
-                "VolumeUp": ADB_KEYCODE_VOLUME_UP,
-                "VolumeDown": ADB_KEYCODE_VOLUME_DOWN,
-                "Mute": ADB_KEYCODE_VOLUME_MUTE,
-                "Standby": ADB_KEYCODE_POWER,
-                "Power": ADB_KEYCODE_POWER,
-                "Back": ADB_KEYCODE_BACK,
-                "Home": ADB_KEYCODE_HOME,
-                "Menu": ADB_KEYCODE_MENU,
-            }
-            if key in keycode_map and adb_send_keycode(keycode_map[key]):
+            if adb_send_keycode(keycode_map[key]):
                 print(f"✓ Sent key {key} via ADB fallback")
                 return
         raise
