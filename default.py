@@ -125,7 +125,9 @@ def check_adb_via_gui() -> None:
             dialog = xbmcgui.Dialog()
             full_message = (
                 f"{message}\n\n"
-                "Install 'System Tools' addon from LibreELEC repository to get ADB support."
+                "Manually install Android SDK Platform Tools on LibreELEC.\n"
+                "See README for installation instructions.\n\n"
+                "Alternative: Run ADB from another computer on your network."
             )
             dialog.ok("ADB Not Available", full_message)
     except Exception as exc:  # noqa: BLE001

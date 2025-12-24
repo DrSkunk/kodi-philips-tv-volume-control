@@ -36,19 +36,36 @@ Settings and auth are stored under the add-on data directory so pairing only has
 ### Prerequisites
 
 #### 1. Install ADB on LibreELEC/OpenELEC
-ADB is **not** included by default in LibreELEC. You need to install it first:
+ADB is **not** included by default in LibreELEC and is **not available through any LibreELEC addon**.
 
-**On LibreELEC:**
-- Open Kodi → Add-ons → Install from repository → LibreELEC Add-ons → Program add-ons
-- Look for "System Tools" or similar addon that bundles command-line utilities
-- Install the addon - this will provide the `adb` binary
-- The binary will be available in the addon's path (typically accessible via `/storage/.kodi/addons/virtual.system-tools/bin/adb`)
+**Manual Installation (Recommended for LibreELEC):**
+1. Download the Android SDK Platform Tools from Google:
+   - Visit: https://developer.android.com/studio/releases/platform-tools
+   - Download the Linux version (platform-tools-linux.zip)
+
+2. Extract and install on LibreELEC:
+   ```bash
+   # SSH into your LibreELEC device
+   cd /storage
+   wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+   unzip platform-tools-latest-linux.zip
+   chmod +x platform-tools/adb
+   ```
+
+3. Add to PATH or use full path:
+   ```bash
+   # Option 1: Add to PATH in ~/.profile
+   echo 'export PATH=$PATH:/storage/platform-tools' >> ~/.profile
+   
+   # Option 2: Use full path when running
+   /storage/platform-tools/adb version
+   ```
 
 **Alternative methods:**
-- Use `adb` from another computer on your network to control the TV remotely
-- Manually download a standalone `adb` binary for your architecture (ARM/x86) and place it in `/storage/.kodi/addons/script.philips-tv-volume-control/` or `/storage/` (ensure it's executable with `chmod +x adb`)
+- **Remote ADB (Easier):** Use `adb` from another computer (Windows/Mac/Linux) on your network to control the TV remotely. No LibreELEC installation needed.
+- **Docker Container:** Run ADB from a Docker container on LibreELEC if Docker is available
 
-**Note:** If `adb` is not in your system PATH, the addon will not be able to use ADB features. Test by running `adb version` via SSH.
+**Note:** The architecture of your LibreELEC device (ARM vs x86_64) must match the downloaded platform-tools. Most devices use x86_64, but Raspberry Pi uses ARM.
 
 #### 2. Enable ADB debugging on your Philips Android TV:
    - Go to Settings → About → Build and tap 7 times to enable Developer Options
