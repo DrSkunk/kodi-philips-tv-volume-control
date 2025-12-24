@@ -21,6 +21,7 @@ import json
 import os
 import random
 import ssl
+import subprocess
 import sys
 import time
 import urllib.error
@@ -59,6 +60,11 @@ def usage() -> None:
         "  python philips_tv.py volume_down [steps=1] [port=1926]\n"
         "  python philips_tv.py hdmi        <n> [port=1926]\n"
         "  python philips_tv.py key         <KeyName> [count=1] [port=1926]\n"
+        "\nADB commands:\n"
+        "  python philips_tv.py adb_check   # Check if ADB is available\n"
+        "  python philips_tv.py adb_setup   <TV_IP> [adb_port=5555]\n"
+        "  python philips_tv.py adb_enable  [true|false]\n"
+        "  python philips_tv.py adb_use_for_all [true|false]\n"
     )
     sys.exit(1)
 
@@ -164,6 +170,231 @@ def http_json(
             raise RuntimeError(f"Request failed: {e.reason}") from None
 
 
+# ---------- ADB helpers ----------
+
+# Android TV keycodes for common operations
+ADB_KEYCODE_POWER = 26
+ADB_KEYCODE_VOLUME_UP = 24
+ADB_KEYCODE_VOLUME_DOWN = 25
+ADB_KEYCODE_VOLUME_MUTE = 164
+ADB_KEYCODE_BACK = 4
+ADB_KEYCODE_HOME = 3
+ADB_KEYCODE_MENU = 82
+
+
+def get_adb_settings() -> Dict[str, any]:
+    """Load ADB settings from the settings file."""
+    if not os.path.exists(SETTINGS_FILE):
+        return {}
+    with open(SETTINGS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    return {
+        "enabled": data.get("adb_enabled", False),
+        "host": data.get("adb_host", data.get("ip", "")),
+        "port": data.get("adb_port", 5555),
+        "use_for_all": data.get("adb_use_for_all", False),
+    }
+
+
+def save_adb_settings(
+    enabled: bool = None,
+    host: str = None,
+    port: int = None,
+    use_for_all: bool = None,
+) -> None:
+    """Save ADB settings to the settings file."""
+    current_data = {}
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            current_data = json.load(f)
+
+    if enabled is not None:
+        current_data["adb_enabled"] = bool(enabled)
+    if host is not None:
+        current_data["adb_host"] = host
+    if port is not None:
+        current_data["adb_port"] = int(port)
+    if use_for_all is not None:
+        current_data["adb_use_for_all"] = bool(use_for_all)
+
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(current_data, f, indent=2)
+
+
+def adb_command(host: str, port: int, cmd: List[str], timeout: int = 10) -> Tuple[bool, str]:
+    """Execute an ADB command. Returns (success, output)."""
+    try:
+        # Connect to the device first
+        connect_cmd = ["adb", "connect", f"{host}:{port}"]
+        verbose_log(f"→ ADB connect: {' '.join(connect_cmd)}")
+        subprocess.run(
+            connect_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+        # Execute the actual command
+        full_cmd = ["adb", "-s", f"{host}:{port}"] + cmd
+        verbose_log(f"→ ADB command: {' '.join(full_cmd)}")
+        result = subprocess.run(
+            full_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+        if result.returncode == 0:
+            verbose_log(f"  ✓ ADB ok: {result.stdout.strip()}")
+            return True, result.stdout.strip()
+        else:
+            verbose_log(f"  ✗ ADB failed: {result.stderr.strip()}")
+            return False, result.stderr.strip()
+
+    except subprocess.TimeoutExpired:
+        verbose_log("  ✗ ADB timeout")
+        return False, "ADB command timed out"
+    except FileNotFoundError:
+        verbose_log("  ✗ ADB not found")
+        return False, "ADB binary not found. On LibreELEC, manually install Android SDK Platform Tools. See README for details."
+    except Exception as exc:
+        verbose_log(f"  ✗ ADB error: {exc}")
+        return False, str(exc)
+
+
+def check_adb_available() -> Tuple[bool, str]:
+    """Check if adb binary is available on the system. Returns (available, message)."""
+    try:
+        result = subprocess.run(
+            ["adb", "version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            version_line = "unknown"
+            if result.stdout and result.stdout.strip():
+                lines = result.stdout.strip().split('\n')
+                if lines:
+                    version_line = lines[0]
+            return True, f"ADB available: {version_line}"
+        else:
+            return False, "ADB binary found but returned an error"
+    except FileNotFoundError:
+        return False, "ADB binary not found in PATH. On LibreELEC, manually install Android SDK Platform Tools."
+    except subprocess.TimeoutExpired:
+        return False, "ADB check timed out"
+    except Exception as exc:
+        return False, f"ADB check failed: {exc}"
+
+
+def adb_send_keycode(keycode: int, host: str = None, port: int = None) -> bool:
+    """Send a keycode to the TV via ADB. Returns True if successful."""
+    adb_settings = get_adb_settings()
+    if not adb_settings.get("enabled"):
+        return False
+
+    target_host = host or adb_settings.get("host")
+    target_port = port or adb_settings.get("port", 5555)
+
+    if not target_host:
+        verbose_log("ADB host not configured. Please run adb_setup first.")
+        return False
+
+    success, output = adb_command(
+        target_host,
+        target_port,
+        ["shell", "input", "keyevent", str(keycode)],
+    )
+
+    if success:
+        verbose_log(f"✓ Sent keycode {keycode} via ADB")
+    else:
+        verbose_log(f"✗ Failed to send keycode {keycode} via ADB: {output}")
+
+    return success
+
+
+def adb_power_on() -> bool:
+    """Turn on the TV via ADB using power keycode."""
+    print("Turning on TV via ADB...")
+    return adb_send_keycode(ADB_KEYCODE_POWER)
+
+
+def adb_power_off() -> bool:
+    """Turn off the TV via ADB using power keycode."""
+    print("Turning off TV via ADB...")
+    return adb_send_keycode(ADB_KEYCODE_POWER)
+
+
+def adb_volume_up(steps: int = 1) -> bool:
+    """Increase volume via ADB."""
+    print(f"Volume up {steps} step(s) via ADB...")
+    for _ in range(steps):
+        if not adb_send_keycode(ADB_KEYCODE_VOLUME_UP):
+            return False
+        time.sleep(0.1)  # Small delay between keypresses
+    return True
+
+
+def adb_volume_down(steps: int = 1) -> bool:
+    """Decrease volume via ADB."""
+    print(f"Volume down {steps} step(s) via ADB...")
+    for _ in range(steps):
+        if not adb_send_keycode(ADB_KEYCODE_VOLUME_DOWN):
+            return False
+        time.sleep(0.1)  # Small delay between keypresses
+    return True
+
+
+def adb_mute() -> bool:
+    """Toggle mute via ADB."""
+    print("Toggling mute via ADB...")
+    return adb_send_keycode(ADB_KEYCODE_VOLUME_MUTE)
+
+
+def adb_hdmi_switch(input_number: int) -> bool:
+    """
+    Switch HDMI input via ADB.
+    This uses Android TV's input switching mechanism.
+    """
+    adb_settings = get_adb_settings()
+    if not adb_settings.get("enabled"):
+        return False
+
+    target_host = adb_settings.get("host")
+    target_port = adb_settings.get("port", 5555)
+
+    if not target_host:
+        verbose_log("ADB host not configured for HDMI switching. Please run adb_setup first.")
+        return False
+
+    print(f"Switching to HDMI {input_number} via ADB...")
+
+    # Try using Android TV's input command
+    # NOTE: This component name may vary by device/manufacturer.
+    # For Philips TVs, the activity path might differ from standard Android TV.
+    # Users may need to determine the correct path using: adb shell dumpsys activity activities
+    hdmi_input = f"com.google.android.videos/.TvInputActivity#HDMI{input_number}"
+
+    success, output = adb_command(
+        target_host,
+        target_port,
+        ["shell", "am", "start", "-n", hdmi_input],
+    )
+
+    if not success:
+        # Fallback: try using home button and letting the user manually switch
+        verbose_log("Direct HDMI switch not supported via ADB, sending HOME key")
+        adb_send_keycode(ADB_KEYCODE_HOME)
+        return False
+
+    return success
+
+
 # ---------- commands ----------
 
 def pair(ip: str, port: int = 1926, pin_reader=read_pin) -> None:
@@ -250,20 +481,55 @@ def set_volume(volume: str, port_override: int = None) -> None:
 
 def send_key(key: str, port_override: int = None) -> None:
     """Send a virtual remote keypress to the TV."""
-    auth = load_auth()
-    ip, port_settings, _verbose = load_settings()
-    port = port_override if port_override is not None else port_settings
+    adb_settings = get_adb_settings()
+    use_adb = adb_settings.get("use_for_all", False)
 
-    base = f"https://{ip}:{port}/6"
-    payload = {"key": key}
+    # Map key names to ADB keycodes
+    keycode_map = {
+        "VolumeUp": ADB_KEYCODE_VOLUME_UP,
+        "VolumeDown": ADB_KEYCODE_VOLUME_DOWN,
+        "Mute": ADB_KEYCODE_VOLUME_MUTE,
+        "Standby": ADB_KEYCODE_POWER,
+        "Power": ADB_KEYCODE_POWER,
+        "Back": ADB_KEYCODE_BACK,
+        "Home": ADB_KEYCODE_HOME,
+        "Menu": ADB_KEYCODE_MENU,
+    }
 
-    print(f"Sending key {key} to {ip}:{port}")
-    http_json(
-        f"{base}/input/key",
-        payload=payload,
-        username=auth["username"],
-        password=auth["password"],
-    )
+    # Try ADB first if configured for all operations
+    if use_adb and adb_settings.get("enabled"):
+        if key in keycode_map:
+            print(f"Sending key {key} via ADB")
+            if adb_send_keycode(keycode_map[key]):
+                return
+            verbose_log("ADB failed, falling back to JointSpace")
+        else:
+            verbose_log(f"Key {key} not supported by ADB, using JointSpace")
+
+    # Use JointSpace API
+    try:
+        auth = load_auth()
+        ip, port_settings, _verbose = load_settings()
+        port = port_override if port_override is not None else port_settings
+
+        base = f"https://{ip}:{port}/6"
+        payload = {"key": key}
+
+        print(f"Sending key {key} to {ip}:{port}")
+        http_json(
+            f"{base}/input/key",
+            payload=payload,
+            username=auth["username"],
+            password=auth["password"],
+        )
+    except RuntimeError as exc:
+        # If JointSpace fails and ADB is enabled, try ADB as fallback
+        if adb_settings.get("enabled") and not use_adb and key in keycode_map:
+            verbose_log(f"JointSpace failed ({exc}), trying ADB fallback")
+            if adb_send_keycode(keycode_map[key]):
+                print(f"✓ Sent key {key} via ADB fallback")
+                return
+        raise
 
 
 def send_key_times(key: str, count: int, port_override: int = None) -> None:
@@ -276,6 +542,20 @@ def send_key_times(key: str, count: int, port_override: int = None) -> None:
 
 
 def switch_source(source_id: str, port_override: int = None) -> None:
+    adb_settings = get_adb_settings()
+    use_adb = adb_settings.get("use_for_all", False)
+
+    # Try ADB first if configured for all operations and source is HDMI
+    if use_adb and adb_settings.get("enabled") and source_id.startswith("hdmi"):
+        try:
+            hdmi_num = int(source_id.replace("hdmi", ""))
+            if adb_hdmi_switch(hdmi_num):
+                return
+        except (ValueError, IndexError):
+            pass
+        verbose_log("ADB HDMI switch failed, falling back to JointSpace")
+
+    # Use JointSpace API
     auth = load_auth()
     ip, port_settings, _verbose = load_settings()
     port = port_override if port_override is not None else port_settings
@@ -294,6 +574,20 @@ def switch_source(source_id: str, port_override: int = None) -> None:
     except RuntimeError as exc:
         # Some models return 404 for /sources/current; try activities/launch.
         if "404" not in str(exc):
+            # If JointSpace fails and ADB is enabled, try ADB as fallback for HDMI
+            if (
+                adb_settings.get("enabled")
+                and not use_adb
+                and source_id.startswith("hdmi")
+            ):
+                verbose_log(f"JointSpace failed ({exc}), trying ADB fallback")
+                try:
+                    hdmi_num = int(source_id.replace("hdmi", ""))
+                    if adb_hdmi_switch(hdmi_num):
+                        print(f"✓ Switched to {source_id} via ADB fallback")
+                        return
+                except (ValueError, IndexError):
+                    pass
             raise
         verbose_log("Falling back to /activities/launch for source switch")
         http_json(
@@ -411,6 +705,32 @@ def handle_command(args: List[str]) -> None:
         count = int(rest[1]) if len(rest) >= 2 else 1
         port = int(rest[2]) if len(rest) >= 3 else None
         send_key_times(key_name, count, port)
+    elif cmd == "adb_check":
+        available, message = check_adb_available()
+        print(message)
+        if not available:
+            print("\nTo install ADB on LibreELEC:")
+            print("  1. Download Android SDK Platform Tools from:")
+            print("     https://developer.android.com/studio/releases/platform-tools")
+            print("  2. SSH into LibreELEC and extract to /storage/platform-tools")
+            print("  3. Add to PATH or use full path: /storage/platform-tools/adb")
+            print("\nAlternative: Run ADB from another computer on your network")
+            sys.exit(1)
+    elif cmd == "adb_setup":
+        if len(rest) < 1:
+            usage()
+        adb_host = rest[0]
+        adb_port = int(rest[1]) if len(rest) >= 2 else 5555
+        save_adb_settings(enabled=True, host=adb_host, port=adb_port)
+        print(f"✓ ADB configured for {adb_host}:{adb_port}")
+    elif cmd == "adb_enable":
+        enabled = rest[0].lower() in {"true", "1", "yes"} if rest else True
+        save_adb_settings(enabled=enabled)
+        print(f"✓ ADB {'enabled' if enabled else 'disabled'}")
+    elif cmd == "adb_use_for_all":
+        use_for_all = rest[0].lower() in {"true", "1", "yes"} if rest else True
+        save_adb_settings(use_for_all=use_for_all)
+        print(f"✓ ADB use_for_all set to {use_for_all}")
     else:
         usage()
 

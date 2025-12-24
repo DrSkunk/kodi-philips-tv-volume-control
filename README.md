@@ -29,6 +29,90 @@ Install the folder as a script add-on (local install from zip or source). Launch
 
 Settings and auth are stored under the add-on data directory so pairing only has to be done once.
 
+## ADB Setup (Optional but Recommended)
+
+**NEW:** ADB (Android Debug Bridge) allows controlling the TV even when it's in standby mode, which the JointSpace API cannot do.
+
+### Prerequisites
+
+#### 1. Install ADB on LibreELEC/OpenELEC
+ADB is **not** included by default in LibreELEC and is **not available through any LibreELEC addon**.
+
+**Manual Installation (For LibreELEC):**
+
+1. **Determine your device architecture:**
+   ```bash
+   # SSH into your LibreELEC device
+   uname -m
+   # x86_64 = Intel/AMD 64-bit
+   # armv7l or aarch64 = ARM (Raspberry Pi, etc.)
+   ```
+
+2. **Download the appropriate Android SDK Platform Tools:**
+   - Visit: https://developer.android.com/studio/releases/platform-tools
+   - Download the version for your architecture:
+     - **x86_64 (most devices):** platform-tools-latest-linux.zip
+     - **ARM (Raspberry Pi):** You may need to compile from source or use prebuilt ARM binaries
+
+3. **Install on LibreELEC (x86_64 example):**
+   ```bash
+   # SSH into your LibreELEC device
+   cd /storage
+   # Download (replace URL with latest version if needed)
+   wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+   unzip platform-tools-latest-linux.zip
+   chmod +x platform-tools/adb
+   # Test it works
+   ./platform-tools/adb version
+   ```
+
+4. **Add to PATH (optional but recommended):**
+   ```bash
+   # Add to PATH in ~/.profile
+   echo 'export PATH=$PATH:/storage/platform-tools' >> ~/.profile
+   source ~/.profile
+   # Now you can run: adb version
+   ```
+
+**Alternative methods (Easier):**
+- **Remote ADB (Recommended for most users):** Use `adb` from another computer (Windows/Mac/Linux) on your network to control the TV remotely. No LibreELEC installation needed. This is often simpler and more reliable.
+- **Docker Container:** Run ADB from a Docker container on LibreELEC if Docker addon is installed
+
+**Important Notes:**
+- The wget URL points to the latest version, which is x86_64 only
+- For ARM devices (Raspberry Pi), you'll need to find ARM-compatible ADB binaries or compile from source
+- Test with `adb version` before proceeding
+
+#### 2. Enable ADB debugging on your Philips Android TV:
+   - Go to Settings → About → Build and tap 7 times to enable Developer Options
+   - Go to Settings → Developer Options → USB Debugging (enable)
+   - Go to Settings → Developer Options → Network Debugging (enable)
+
+### Configure ADB
+```bash
+# First, check if ADB is available
+python3 philips_tv.py adb_check
+
+# Set up ADB connection (usually same IP as JointSpace, port 5555)
+python3 philips_tv.py adb_setup <TV_IP> [adb_port=5555]
+
+# Enable ADB support
+python3 philips_tv.py adb_enable true
+
+# (Optional) Use ADB for all operations instead of JointSpace
+python3 philips_tv.py adb_use_for_all true
+```
+
+When `adb_enabled` is `true` but `adb_use_for_all` is `false` (default), the script will try JointSpace first and fall back to ADB if the TV is off. Set `adb_use_for_all` to `true` to use ADB exclusively for faster response times.
+
+### Via GUI Add-on
+You can also configure ADB through the GUI:
+- Launch "Philips TV Volume Control" from Programs
+- Select "Check ADB Availability" to verify ADB is installed
+- Select "Configure ADB" to set the TV IP and port
+- Select "ADB Settings" to enable ADB or toggle "use for all operations"
+
+
 ## Kodi keymap to send media keys
 Use the add-on entrypoint directly from keymaps so Kodi sends volume to the TV instead of local audio. Create or edit `/storage/.kodi/userdata/keymaps/keyboard.xml` (or a custom keymap) with entries like:
 
