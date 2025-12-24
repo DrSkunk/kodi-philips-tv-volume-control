@@ -38,34 +38,50 @@ Settings and auth are stored under the add-on data directory so pairing only has
 #### 1. Install ADB on LibreELEC/OpenELEC
 ADB is **not** included by default in LibreELEC and is **not available through any LibreELEC addon**.
 
-**Manual Installation (Recommended for LibreELEC):**
-1. Download the Android SDK Platform Tools from Google:
-   - Visit: https://developer.android.com/studio/releases/platform-tools
-   - Download the Linux version (platform-tools-linux.zip)
+**Manual Installation (For LibreELEC):**
 
-2. Extract and install on LibreELEC:
+1. **Determine your device architecture:**
+   ```bash
+   # SSH into your LibreELEC device
+   uname -m
+   # x86_64 = Intel/AMD 64-bit
+   # armv7l or aarch64 = ARM (Raspberry Pi, etc.)
+   ```
+
+2. **Download the appropriate Android SDK Platform Tools:**
+   - Visit: https://developer.android.com/studio/releases/platform-tools
+   - Download the version for your architecture:
+     - **x86_64 (most devices):** platform-tools-latest-linux.zip
+     - **ARM (Raspberry Pi):** You may need to compile from source or use prebuilt ARM binaries
+
+3. **Install on LibreELEC (x86_64 example):**
    ```bash
    # SSH into your LibreELEC device
    cd /storage
+   # Download (replace URL with latest version if needed)
    wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
    unzip platform-tools-latest-linux.zip
    chmod +x platform-tools/adb
+   # Test it works
+   ./platform-tools/adb version
    ```
 
-3. Add to PATH or use full path:
+4. **Add to PATH (optional but recommended):**
    ```bash
-   # Option 1: Add to PATH in ~/.profile
+   # Add to PATH in ~/.profile
    echo 'export PATH=$PATH:/storage/platform-tools' >> ~/.profile
-   
-   # Option 2: Use full path when running
-   /storage/platform-tools/adb version
+   source ~/.profile
+   # Now you can run: adb version
    ```
 
-**Alternative methods:**
-- **Remote ADB (Easier):** Use `adb` from another computer (Windows/Mac/Linux) on your network to control the TV remotely. No LibreELEC installation needed.
-- **Docker Container:** Run ADB from a Docker container on LibreELEC if Docker is available
+**Alternative methods (Easier):**
+- **Remote ADB (Recommended for most users):** Use `adb` from another computer (Windows/Mac/Linux) on your network to control the TV remotely. No LibreELEC installation needed. This is often simpler and more reliable.
+- **Docker Container:** Run ADB from a Docker container on LibreELEC if Docker addon is installed
 
-**Note:** The architecture of your LibreELEC device (ARM vs x86_64) must match the downloaded platform-tools. Most devices use x86_64, but Raspberry Pi uses ARM.
+**Important Notes:**
+- The wget URL points to the latest version, which is x86_64 only
+- For ARM devices (Raspberry Pi), you'll need to find ARM-compatible ADB binaries or compile from source
+- Test with `adb version` before proceeding
 
 #### 2. Enable ADB debugging on your Philips Android TV:
    - Go to Settings → About → Build and tap 7 times to enable Developer Options
